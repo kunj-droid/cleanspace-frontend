@@ -80,8 +80,9 @@
         </div>
 
         <div id="form-staff" class="hidden space-y-4 text-center">
-            <p class="text-xs text-slate-500 mb-2">Use Staff IDs (e.g. <b>m_01</b> or <b>f_01</b>)</p>
-            <input type="text" id="c_id" placeholder="Enter Staff ID" class="w-full p-3 border rounded-xl bg-white focus:ring-2 focus:ring-sky-400 outline-none text-center font-bold uppercase">
+            <p class="text-xs text-slate-500 mb-2">Login to your Staff Account</p>
+            <input type="text" id="c_id" placeholder="Staff ID (e.g. m_01)" class="w-full p-3 border rounded-xl bg-white focus:ring-2 focus:ring-sky-400 outline-none text-center font-bold lowercase">
+            <input type="password" id="c_pass" placeholder="Password" class="w-full p-3 border rounded-xl bg-white focus:ring-2 focus:ring-sky-400 outline-none text-center">
             <button onclick="staffAuth()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg transition"><i class="fa-solid fa-id-card"></i> Login to Queue</button>
         </div>
     </div>
@@ -236,7 +237,7 @@
 </div>
 
 <script>
-    const API_URL = "https://cleanspace-backend.onrender.com";
+    const API_URL = "http://localhost:8000";
     let currentUser = {};
     let currentReqId = null;
     let pollInterval = null; 
@@ -363,7 +364,7 @@
                                 <p class="font-bold text-slate-800 text-sm">${s.name}</p>
                                 <span class="text-[10px] font-extrabold px-1.5 py-0.5 rounded ${badgeColor}">${s.id}</span>
                             </div>
-                            <p class="text-xs text-slate-500"><i class="fa-solid fa-star text-yellow-500"></i> ${s.rating} | <i class="fa-solid fa-broom"></i> ${s.jobs} Jobs</p>
+                            <p class="text-xs text-slate-500"><i class="fa-solid fa-key text-slate-400"></i> ${s.password} | <i class="fa-solid fa-star text-yellow-500"></i> ${s.rating} | <i class="fa-solid fa-broom"></i> ${s.jobs} Jobs</p>
                         </div>
                         <button onclick="removeStaff('${s.id}')" class="text-red-400 hover:text-red-600 p-2"><i class="fa-solid fa-trash"></i></button>
                     </div>
@@ -375,7 +376,7 @@
     }
 
     async function addStaff() {
-        const name = document.getElementById("new-staff-name").value;
+        const name = document.getElementById("new-staff-name").value.trim();
         const gender = document.getElementById("new-staff-gender").value;
         
         if(!name || !gender) { alert("Please provide both name and gender."); return; }
@@ -390,7 +391,7 @@
                 document.getElementById("new-staff-name").value = "";
                 document.getElementById("new-staff-gender").value = "";
                 playSound('success');
-                alert(`Added ${data.name}! ID: ${data.staff_id}`);
+                alert(`Added ${data.name}!\n\nID: ${data.staff_id}\nPASSWORD: ${data.password}\n\nPlease save this password for the new staff member.`);
                 loadManagerStaffList();
             }
         } catch(err) { alert("Server error while adding staff."); }
@@ -682,16 +683,36 @@
 
     // --- STAFF LOGIC ---
     async function staffAuth() {
-        const id = document.getElementById("c_id").value.toLowerCase();
-        if(!id) return;
+        const id = document.getElementById("c_id").value.trim().toLowerCase();
+        const pass = document.getElementById("c_pass").value.trim();
         
-        currentUser = { id: id };
-        hideAllViews();
-        document.getElementById("staff-view").classList.remove("hidden");
-        playSound('success');
-        
-        loadStaffQueue();
-        setInterval(loadStaffQueue, 10000); 
+        if(!id || !pass) {
+            alert("Please enter both Staff ID and Password.");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_URL}/auth/staff`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ staff_id: id, password: pass })
+            });
+            
+            if(!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.detail || "Invalid login");
+            }
+
+            const data = await res.json();
+            currentUser = { id: data.staff_id, name: data.name };
+            hideAllViews();
+            document.getElementById("staff-view").classList.remove("hidden");
+            playSound('success');
+            
+            loadStaffQueue();
+            setInterval(loadStaffQueue, 10000); 
+        } catch(err) {
+            alert(err.message || "Failed to login.");
+        }
     }
 
     async function loadStaffQueue() {
@@ -699,7 +720,7 @@
         const listContainer = document.getElementById("staff-requests-list");
         try {
             const res = await fetch(`${API_URL}/staff/pool/${currentUser.id}`);
-            if(!res.ok) { listContainer.innerHTML = `<p class="text-center text-sm text-red-500 py-4">Invalid Staff ID.</p>`; return; }
+            if(!res.ok) { listContainer.innerHTML = `<p class="text-center text-sm text-red-500 py-4">Error loading jobs.</p>`; return; }
             const jobs = await res.json();
             listContainer.innerHTML = ""; 
             if(jobs.length === 0) { listContainer.innerHTML = `<p class="text-center text-slate-500 py-4"><i class="fa-solid fa-mug-hot"></i> No active jobs right now!</p>`; return; }
